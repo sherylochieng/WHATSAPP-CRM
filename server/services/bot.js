@@ -55,6 +55,137 @@ function logMessage(leadId, direction, body, rawPayload) {
     `INSERT INTO messages (lead_id, direction, body, raw_payload)
      VALUES (?, ?, ?, ?)`
   ).run(leadId, direction, body, JSON.stringify(rawPayload || null));
+
+}
+
+// server/services/bot.js  (continuing)
+
+// --- Conversation handler -------------------------------------------------
+
+async function handleIncoming(message, contact) {
+  const waPhone = message.from;
+  const profileName = contact?.profile?.name;
+
+  const lead = findOrCreateLead(waPhone, profileName);
+
+  // Pull user-visible text out of whatever message type Meta sent
+  let userText = null;
+  let listChoiceId = null;
+
+  if (message.type === "text") {
+    userText = message.text?.body?.trim();
+  } else if (message.type === "interactive") {
+    const i = message.interactive;
+    if (i?.type === "list_reply") {
+      listChoiceId = i.list_reply.id;
+      userText = i.list_reply.title;
+    } else if (i?.type === "button_reply") {
+      userText = i.button_reply.title;
+    }
+  } else {
+    // voice note, image, sticker, location...
+    await sendText(
+      waPhone,
+      "I can only read text messages right now. Could you type your answer?"
+    );
+    logMessage(lead.id, "inbound", `[${message.type}]`, message);
+    return;
+  }
+
+  logMessage(lead.id, "inbound", userText, message);
+
+  // Escape hatch: restart
+  if (userText && /^(restart|start over|reset)$/i.test(userText)) {
+    setState(lead.id, "awaiting_name");
+    updateLead(lead.id, { name: null, email: null, inquiry_type: null });
+    const reply = "No problem, let's start over. What's your full name?";
+    await sendText(waPhone, reply);
+    logMessage(lead.id, "outbound", reply);
+    return;
+  }
+
+  const convo = getConversation(lead.id);
+
+  switch (convo.state) {
+    case "awaiting_name": {
+      if (!userText || !looksLikeName(userText)) {
+        const reply =
+          "Hi! Welcome to Mctaba CRM. What's your full name? (at least 2 characters)";
+        await sendText(waPhone, reply);
+        logMessage(lead.id, "outbound", reply);
+        return;
+      }
+      updateLead(lead.id, { name: userText });
+      setState(lead.id, "awaiting_email");
+      const reply = `Thanks ${userText.split(" ")[0]}! What's your email address?`;
+      await sendText(waPhone, reply);
+      logMessage(lead.id, "outbound", reply);
+      return;
+    }
+
+    case "awaiting_email": {
+      if (!looksLikeEmail(userText)) {
+        const reply =
+          "Hmm, that doesn't look like an email. Could you send it again? Example: yourname@gmail.com";
+        await sendText(waPhone, reply);
+        logMessage(lead.id, "outbound", reply);
+        return;
+      }
+      updateLead(lead.id, { email: userText });
+      setState(lead.id, "awaiting_inquiry_type");
+      await sendInquiryList(waPhone);
+      logMessage(lead.id, "outbound", "[interactive list: inquiry type]");
+      return;
+    }
+
+    case "awaiting_inquiry_type": {
+      if (!listChoiceId && !userText) {
+        await sendInquiryList(waPhone);
+        return;
+      }
+      const inquiry = listChoiceId || userText;
+      updateLead(lead.id, { inquiry_type: inquiry });
+      setState(lead.id, "confirming");
+
+      const fresh = db
+        .prepare("SELECT name, email, inquiry_type FROM leads WHERE id = ?")
+        .get(lead.id);
+      const reply =
+        `Please confirm your details:\n\n` +
+        `Name: ${fresh.name}\n` +
+        `Email: ${fresh.email}\n` +
+        `Inquiry: ${fresh.inquiry_type}\n\n` +
+        `Reply "yes" to confirm or "restart" to start over.`;
+      await sendText(waPhone, reply);
+      logMessage(lead.id, "outbound", reply);
+      return;
+    }
+
+    case "confirming": {
+      if (/^y(es)?$/i.test(userText || "")) {
+        setState(lead.id, "complete");
+        const reply =
+          "Thanks! Your details are saved. Someone from our team will be in touch shortly. To start a new inquiry, type 'restart'.";
+        await sendText(waPhone, reply);
+        logMessage(lead.id, "outbound", reply);
+        return;
+      }
+      const reply =
+        "Reply 'yes' to confirm the details above, or 'restart' to start over.";
+      await sendText(waPhone, reply);
+      logMessage(lead.id, "outbound", reply);
+      return;
+    }
+
+    case "complete":
+    default: {
+      const reply =
+        "Thanks! We already have your details. A team member will be in touch. To start a new inquiry, type 'restart'.";
+      await sendText(waPhone, reply);
+      logMessage(lead.id, "outbound", reply);
+      return;
+    }
+  }
 }
 
 module.exports = {
@@ -63,4 +194,6 @@ module.exports = {
   setState,
   updateLead,
   logMessage,
+  handleIncoming,
 };
+
