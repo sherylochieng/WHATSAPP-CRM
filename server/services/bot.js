@@ -55,9 +55,18 @@ function logMessage(leadId, direction, body, rawPayload) {
     `INSERT INTO messages (lead_id, direction, body, raw_payload)
      VALUES (?, ?, ?, ?)`
   ).run(leadId, direction, body, JSON.stringify(rawPayload || null));
+}
+// server/services/bot.js  (add above module.exports)
 
+// --- Validation -----------------------------------------------------------
+
+function looksLikeEmail(str) {
+  return typeof str === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
 }
 
+function looksLikeName(str) {
+  return typeof str === "string" && str.trim().length >= 2;
+}
 // server/services/bot.js  (continuing)
 
 // --- Conversation handler -------------------------------------------------
@@ -196,4 +205,3 @@ module.exports = {
   logMessage,
   handleIncoming,
 };
-

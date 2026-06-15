@@ -67,6 +67,3 @@ async function sendInquiryList(to) {
 }
 
 module.exports = { sendText, sendInquiryList };
-
-
-
