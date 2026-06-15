@@ -1,11 +1,11 @@
-// server/routes/webhook.js
+// server/routes/webhook.js  (replaces yesterday's version)
 const express = require("express");
 const crypto = require("crypto");
 const { handleIncoming } = require("../services/bot");
 
 const router = express.Router();
 
-// --- GET: verification handshake ------------------------------------------
+// --- GET: verification handshake (unchanged from Day 1) -------------------
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -43,14 +43,13 @@ router.post("/", async (req, res) => {
       await handleIncoming(message, contact);
     }
   } catch (err) {
+    // We've already sent 200 -- log and move on.
     console.error("Error handling webhook:", err);
   }
 });
 
 // --- HMAC signature check -------------------------------------------------
 function verifySignature(req) {
-  if (process.env.NODE_ENV !== "production") return true;
-
   const signature = req.headers["x-hub-signature-256"];
   if (!signature || !req.rawBody) return false;
 
