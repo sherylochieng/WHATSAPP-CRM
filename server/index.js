@@ -4,6 +4,9 @@ const express = require("express");
 const cors = require("cors");
 
 const webhookRoutes = require("./routes/webhook");
+//additional route imports will go here in Days 3-4
+const leadRoutes = require("./routes/leads");
+const statsRoutes = require("./routes/stats");
 
 const app = express();
 
@@ -21,6 +24,10 @@ app.use(
 );
 
 app.use("/webhook", webhookRoutes);
+//additional routes for lead management and stats will go here in Days 3-4
+app.use("/api/leads", leadRoutes);
+app.use("/api/stats", statsRoutes);
+
 
 // Placeholder routes for Days 3-4
 app.use("/api/leads", (_req, res) =>
